@@ -1,0 +1,305 @@
+body {
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+.card {
+    border-radius: 15px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    margin-bottom: 20px;
+    border: none;
+}
+
+.stat-card {
+    background: linear-gradient(45deg, #2196F3, #1976D2);
+    color: white;
+    padding: 20px;
+    border-radius: 15px;
+    margin-bottom: 20px;
+}
+
+.stat-card h3 {
+    font-size: 2.5rem;
+    margin-bottom: 0;
+}
+
+.stat-card p {
+    margin: 0;
+    opacity: 0.8;
+}
+
+.chart-container {
+    position: relative;
+    height: 300px;
+    margin-bottom: 20px;
+}
+
+.country-select {
+    max-width: 300px;
+    margin: 20px auto;
+}
+
+#map-container {
+    position: relative;
+    width: 100%;
+    height: 600px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.country {
+    stroke: #fff;
+    stroke-width: 0.5;
+    transition: fill 0.3s ease;
+    fill: #ccc;
+}
+
+.country:hover {
+    stroke: #000;
+    stroke-width: 1;
+    cursor: pointer;
+}
+
+.map-legend {
+    background: rgba(255, 255, 255, 0.9);
+    padding: 15px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    min-width: 200px;
+    margin: 0 auto 20px auto;
+}
+
+.map-legend h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    color: #333;
+    font-weight: 600;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    margin: 8px 0;
+    font-size: 12px;
+}
+
+.legend-color {
+    width: 20px;
+    height: 20px;
+    min-width: 20px;
+    min-height: 20px;
+    margin-right: 10px;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    border-radius: 3px;
+    display: inline-block;
+}
+
+.legend-item span {
+    color: #333;
+    font-weight: 500;
+}
+
+.loading {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(255, 255, 255, 0.9);
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    z-index: 1000;
+}
+
+.error-message {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #fff;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    color: #dc3545;
+    z-index: 1000;
+}
+
+#error-message {
+    display: none;
+}
+
+.country-popup {
+    position: absolute;
+    z-index: 1000;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    padding: 15px;
+    min-width: 250px;
+}
+
+.popup-content {
+    position: relative;
+}
+
+.popup-content h3 {
+    margin: 0 0 15px 0;
+    color: #333;
+    font-size: 1.2em;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 8px;
+}
+
+.popup-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.popup-stats .stat {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.popup-stats .label {
+    color: #666;
+    font-size: 0.9em;
+}
+
+.popup-stats .value {
+    font-weight: 500;
+    color: #333;
+}
+
+.close-popup {
+    position: absolute;
+    top: -10px;
+    right: -10px;
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.close-popup:hover {
+    background: #c82333;
+}
+
+.timeline-container {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.timeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.timeline-header h4 {
+    margin: 0;
+    color: #333;
+}
+
+.date-display {
+    font-size: 1.1em;
+    color: #666;
+    font-weight: 500;
+}
+
+.timeline-controls {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.timeline-btn {
+    background: #2196F3;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.timeline-btn:hover {
+    background: #1976D2;
+}
+
+.timeline-btn:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+.date-selector {
+    flex: 1;
+    position: relative;
+}
+
+#date-picker {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 1em;
+    color: #333;
+    background-color: white;
+    cursor: pointer;
+}
+
+#date-picker::-webkit-calendar-picker-indicator {
+    background-color: #2196F3;
+    padding: 5px;
+    cursor: pointer;
+    border-radius: 3px;
+    filter: invert(1);
+}
+
+#date-picker::-webkit-calendar-picker-indicator:hover {
+    background-color: #1976D2;
+}
+
+#date-picker:focus {
+    outline: none;
+    border-color: #2196F3;
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+}
+
+/* Style the calendar popup */
+#date-picker::-webkit-datetime-edit {
+    padding: 0;
+}
+
+#date-picker::-webkit-datetime-edit-fields-wrapper {
+    padding: 0;
+}
+
+#date-picker::-webkit-datetime-edit-text {
+    padding: 0 2px;
+    color: #666;
+}
+
+#date-picker::-webkit-datetime-edit-year-field,
+#date-picker::-webkit-datetime-edit-month-field,
+#date-picker::-webkit-datetime-edit-day-field {
+    padding: 0 2px;
+} 

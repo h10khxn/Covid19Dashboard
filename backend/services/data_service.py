@@ -59,14 +59,15 @@ class DataService:
             # Convert date to datetime
             self.df['date'] = pd.to_datetime(self.df['date'])
             
-            # Get the latest date with non-zero data
+            # Set a hard cutoff date for the data
+            cutoff_date = pd.to_datetime('2023-12-31')
+            self.df = self.df[self.df['date'] <= cutoff_date].copy()
+            
+            # Get the latest date with non-zero data (up to cutoff)
             latest_date = self.df[self.df['total_cases'] > 0]['date'].max()
             logger.info(f"Latest date with non-zero data: {latest_date}")
             
-            # Filter to keep only data up to the latest date with non-zero data
-            self.df = self.df[self.df['date'] <= latest_date].copy()
-            
-            # Get unique dates for timeline
+            # Update the available dates for the timeline to only include up to latest_date
             unique_dates = sorted(self.df['date'].unique())
             self.date_strings = [d.strftime("%Y-%m-%d") for d in unique_dates]
             logger.info(f"Date range: {self.date_strings[0]} to {self.date_strings[-1]}")
@@ -100,18 +101,16 @@ class DataService:
             logger.info(f"Getting map data for date: {date}")
             date_obj = pd.to_datetime(date)
             day_data = self.df[self.df['date'] == date_obj].copy()
-            
             logger.info(f"Found {len(day_data)} rows for date {date}")
             logger.info(f"Sample of raw data:\n{day_data[['location', 'total_cases', 'total_deaths']].head()}")
-            
+
+            # If no data for this date, return empty result (do NOT use latest available date)
             if day_data.empty:
-                # If no data for this date, get the latest available date
-                latest_date = self.df['date'].max()
-                day_data = self.df[self.df['date'] == latest_date].copy()
-                logger.info(f"No data for {date}, using latest available date: {latest_date}")
-            
-            # Filter for countries with non-zero cases
-            day_data = day_data[day_data['total_cases'] > 0].copy()
+                logger.info(f"No data for {date}, returning empty result.")
+                return {"date": date, "countries": []}
+
+            # Filter for countries with at least 10 cases (show gray for <10)
+            day_data = day_data[day_data['total_cases'] >= 10].copy()
             logger.info(f"After filtering zero cases, found {len(day_data)} countries with data")
             logger.info(f"Sample of filtered data:\n{day_data[['location', 'total_cases', 'total_deaths']].head()}")
             
@@ -356,13 +355,16 @@ class DataService:
                 logger.info(f"Found {len(day_data)} rows for date {date}")
                 
                 if day_data.empty:
-                    # If no data for this date, get the latest available date
-                    latest_date = self.df['date'].max()
-                    day_data = self.df[self.df['date'] == latest_date].copy()
-                    logger.info(f"No data for {date}, using latest available date: {latest_date}")
+                    logger.info(f"No data for {date}, returning zeros.")
+                    return {
+                        "total_cases": 0,
+                        "total_deaths": 0,
+                        "total_countries": 0,
+                        "date": date
+                    }
                 
-                # Filter for countries with non-zero cases
-                day_data = day_data[day_data['total_cases'] > 0].copy()
+                # Filter for countries with at least 10 cases (show gray for <10)
+                day_data = day_data[day_data['total_cases'] >= 10].copy()
                 logger.info(f"After filtering zero cases, found {len(day_data)} countries with data")
                 logger.info(f"Countries with data: {', '.join(sorted(day_data['location'].unique()))}")
                 
@@ -387,8 +389,8 @@ class DataService:
                 
                 logger.info(f"Found {len(latest_data)} rows for latest date {latest_date}")
                 
-                # Filter for countries with non-zero cases
-                latest_data = latest_data[latest_data['total_cases'] > 0].copy()
+                # Filter for countries with at least 10 cases (show gray for <10)
+                latest_data = latest_data[latest_data['total_cases'] >= 10].copy()
                 logger.info(f"After filtering zero cases, found {len(latest_data)} countries with data")
                 logger.info(f"Countries with data: {', '.join(sorted(latest_data['location'].unique()))}")
                 

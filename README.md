@@ -8,7 +8,7 @@ A real-time COVID-19 dashboard that displays global statistics, country-specific
 - Interactive world map showing case distribution
 - Country-specific data and trends
 - Top countries by cases and deaths
-- Timeline slider for historical data
+- Timeline calendar for historical data
 - Responsive design
 
 ## Project Structure

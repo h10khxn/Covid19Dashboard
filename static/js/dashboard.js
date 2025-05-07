@@ -1,51 +1,108 @@
 const API_BASE = 'http://localhost:3000';
 let worldMap, currentDate, dates = [];
 let currentMapData = null;
+let zoomLevel = 1;
+let mapInitialized = false;
+let darkMode = localStorage.getItem('darkMode') === 'enabled';
 
-// Show/hide loading indicator
-function showLoading() {
-    document.getElementById('loading').style.display = 'flex';
+// Initialize any saved user preferences
+function initPreferences() {
+    // Set dark mode if previously enabled
+    if (darkMode) {
+        document.body.classList.add('dark-mode');
+        document.getElementById('dark-mode-toggle').innerHTML = '<i class="fas fa-sun"></i>';
+    }
+
+    // Set up dark mode toggle
+    document.getElementById('dark-mode-toggle').addEventListener('click', toggleDarkMode);
 }
 
-function hideLoading() {
-    document.getElementById('loading').style.display = 'none';
-}
-
-// Show error message
-function showError(message) {
-    const errorDiv = document.getElementById('error-message');
-    errorDiv.textContent = message;
-    errorDiv.style.display = message ? 'block' : 'none';
-
-    // Remove any existing close button
-    const existingBtn = errorDiv.querySelector('button');
-    if (existingBtn) existingBtn.remove();
-
-    // Only add close button if there is a message
-    if (message) {
-        const closeButton = document.createElement('button');
-        closeButton.innerHTML = '&times;';
-        closeButton.style.cssText = `
-            position: absolute;
-            right: 10px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: none;
-            border: none;
-            font-size: 20px;
-            cursor: pointer;
-            color: #dc3545;
-        `;
-        closeButton.onclick = function() {
-            errorDiv.style.display = 'none';
-        };
-        errorDiv.appendChild(closeButton);
+// Toggle dark mode
+function toggleDarkMode() {
+    darkMode = !darkMode;
+    if (darkMode) {
+        document.body.classList.add('dark-mode');
+        document.getElementById('dark-mode-toggle').innerHTML = '<i class="fas fa-sun"></i>';
+        localStorage.setItem('darkMode', 'enabled');
+    } else {
+        document.body.classList.remove('dark-mode');
+        document.getElementById('dark-mode-toggle').innerHTML = '<i class="fas fa-moon"></i>';
+        localStorage.removeItem('darkMode');
     }
 }
 
-// Initialize world map
+// Show/hide loading indicator with animation
+function showLoading() {
+    const loader = document.getElementById('loading');
+    loader.style.display = 'flex';
+    loader.style.opacity = '0';
+    
+    // Trigger animation
+    setTimeout(() => {
+        loader.style.opacity = '1';
+    }, 10);
+}
+
+function hideLoading() {
+    const loader = document.getElementById('loading');
+    loader.style.opacity = '0';
+    
+    // Remove after transition
+    setTimeout(() => {
+        loader.style.display = 'none';
+    }, 300);
+}
+
+// Show error message with enhanced UI
+function showError(message) {
+    let errorDiv = document.getElementById('error-message');
+    if (!message || message.trim() === '') {
+        if (errorDiv) {
+            errorDiv.remove();
+        }
+        return;
+    }
+    // If the errorDiv doesn't exist, create it
+    if (!errorDiv) {
+        errorDiv = document.createElement('div');
+        errorDiv.id = 'error-message';
+        errorDiv.className = 'error-message';
+        document.body.appendChild(errorDiv);
+    }
+    if (!errorDiv.querySelector('.error-content')) {
+        errorDiv.innerHTML = `
+            <div class="error-icon">
+                <i class="fas fa-exclamation-circle"></i>
+            </div>
+            <div class="error-content">
+                <h5>Error</h5>
+                <p></p>
+            </div>
+            <button class="error-close">&times;</button>
+        `;
+        errorDiv.querySelector('.error-close').addEventListener('click', () => {
+            showError(null);
+        });
+    }
+    errorDiv.querySelector('.error-content p').textContent = message;
+    errorDiv.style.display = 'flex';
+    errorDiv.style.opacity = '0';
+    setTimeout(() => {
+        errorDiv.style.opacity = '1';
+        errorDiv.classList.add('pulse-error');
+        setTimeout(() => {
+            if (errorDiv.style.display !== 'none') {
+                showError(null);
+            }
+        }, 10000);
+    }, 10);
+}
+
+// Initialize world map with improved interactions
 async function initMap() {
     try {
+        if (mapInitialized) return worldMap;
+        
         const container = document.getElementById('map-container');
         const width = container.offsetWidth;
         const height = container.offsetHeight;
@@ -55,254 +112,120 @@ async function initMap() {
 
         const svg = d3.select('#map-container')
             .append('svg')
-            .attr('width', width)
-            .attr('height', height)
+            .attr('width', '100%')
+            .attr('height', '100%')
             .attr('viewBox', [0, 0, width, height])
             .attr('preserveAspectRatio', 'xMidYMid meet');
 
+        // Add a background rect for detecting clicks on empty space
+        svg.append('rect')
+            .attr('width', width)
+            .attr('height', height)
+            .attr('fill', 'transparent');
+
+        // Create a g element to hold map elements and support zoom
+        const g = svg.append('g');
+
+        // Load world map data
         const world = await d3.json('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json');
         const geojson = topojson.feature(world, world.objects.countries);
 
-        // Use fitSize to show the full world
-        const projection = d3.geoMercator()
-            .fitSize([width, height], geojson);
+        // Store geojson globally for reuse
+        worldMap = { geojson };
+
+        // Set up projection
+        const projection = d3.geoMercator().fitSize([width, height], geojson);
         const path = d3.geoPath().projection(projection);
 
         // Define severity thresholds based on cases per million
-        const severityThresholds = {
-            low: 10000,      // 0-10,000 cases per million
-            moderate: 50000, // 10,000-50,000 cases per million
-            high: 100000,    // 50,000-100,000 cases per million
-            veryHigh: 200000 // 100,000-200,000 cases per million
-        };
-
         const colorScale = d3.scaleThreshold()
-            .domain([
-                severityThresholds.low,
-                severityThresholds.moderate,
-                severityThresholds.high,
-                severityThresholds.veryHigh
-            ])
+            .domain([10000, 50000, 100000, 200000])
             .range(['#4CAF50', '#8BC34A', '#FFC107', '#FF9800', '#F44336']);
 
-        // Add legend
-        const legend = d3.select('#legend-container')
-            .html('')
-            .append('div')
-            .attr('class', 'map-legend');
-
-        legend.append('h4')
-            .text('Cases per Million');
-
-        const legendData = [
-            { color: '#4CAF50', label: 'Low (< 10,000)' },
-            { color: '#8BC34A', label: 'Moderate (10,000-50,000)' },
-            { color: '#FFC107', label: 'High (50,000-100,000)' },
-            { color: '#FF9800', label: 'Very High (100,000-200,000)' },
-            { color: '#F44336', label: 'Critical (> 200,000)' }
-        ];
-
-        legend.selectAll('.legend-item')
-            .data(legendData)
-            .enter()
-            .append('div')
-            .attr('class', 'legend-item')
-            .html(d => `
-                <div class=\"legend-color\" style=\"background-color: ${d.color} !important\">&nbsp;</div>
-                <span>${d.label}</span>
-            `);
-
         // Create country paths
-        const countries = svg.append('g')
+        const countries = g.append('g')
+            .attr('class', 'countries')
             .selectAll('path')
             .data(geojson.features)
             .enter()
             .append('path')
             .attr('class', 'country')
             .attr('d', path)
-            .attr('id', d => d.id);
+            .attr('id', d => `country-${d.id}`);
 
-        // Add click events
-        countries
-            .on('click', function(event, d) {
-                event.stopPropagation();
-                
-                console.log('Map click event:', {
-                    countryId: d.id,
-                    countryName: d.properties.name,
-                    currentMapData: currentMapData
-                });
-                
-                // Reset all countries to default style
-                d3.selectAll('.country')
-                    .style('stroke', '#fff')
-                    .style('stroke-width', 0.5);
-                
-                // Highlight clicked country
-                d3.select(this)
-                    .style('stroke', '#000')
-                    .style('stroke-width', 2);
-                
-                // Get country data using the country name
-                const countryData = currentMapData?.countries.find(c => {
-                    // Normalize both strings for comparison
-                    const normalizedMapName = d.properties.name.toLowerCase().trim();
-                    const normalizedDataName = c.country.toLowerCase().trim();
-                    
-                    // Handle common country name variations
-                    const nameVariations = {
-                        'united states': ['usa', 'united states of america', 'u.s.a.', 'u.s.a'],
-                        'united kingdom': ['uk', 'great britain', 'britain', 'u.k.', 'u.k'],
-                        'russian federation': ['russia'],
-                        'czech republic': ['czechia'],
-                        'republic of korea': ['south korea', 'korea'],
-                        'democratic people\'s republic of korea': ['north korea'],
-                        'iran': ['iran (islamic republic of)'],
-                        'vietnam': ['viet nam'],
-                        'brunei': ['brunei darussalam'],
-                        'congo': ['republic of the congo'],
-                        'democratic republic of the congo': ['drc', 'congo (kinshasa)'],
-                        'laos': ['lao people\'s democratic republic'],
-                        'syria': ['syrian arab republic'],
-                        'tanzania': ['united republic of tanzania'],
-                        'uae': ['united arab emirates'],
-                        'venezuela': ['bolivarian republic of venezuela']
-                    };
-                    
-                    // Check direct match
-                    if (normalizedMapName === normalizedDataName) return true;
-                    
-                    // Check variations
-                    for (const [standardName, variations] of Object.entries(nameVariations)) {
-                        if (normalizedMapName === standardName && variations.includes(normalizedDataName)) return true;
-                        if (normalizedDataName === standardName && variations.includes(normalizedMapName)) return true;
-                    }
-                    
-                    return false;
-                });
-                
-                console.log('Country data lookup:', {
-                    searchedName: d.properties.name,
-                    foundData: countryData,
-                    allCountries: currentMapData?.countries.map(c => c.country)
-                });
-                
-                if (countryData) {
-                    console.log('Country clicked:', {
-                        name: countryData.country,
-                        cases: countryData.cases.toLocaleString(),
-                        deaths: countryData.deaths.toLocaleString(),
-                        date: currentDate
-                    });
-                    
-                    // Show popup with country data
-                    const popup = document.createElement('div');
-                    popup.className = 'country-popup';
-                    popup.innerHTML = `
-                        <div class="popup-content">
-                            <h3>${countryData.country}</h3>
-                            <div class="popup-stats">
-                                <div class="stat">
-                                    <span class="label">Total Cases:</span>
-                                    <span class="value">${countryData.cases.toLocaleString()}</span>
-                                </div>
-                                <div class="stat">
-                                    <span class="label">Total Deaths:</span>
-                                    <span class="value">${countryData.deaths.toLocaleString()}</span>
-                                </div>
-                                <div class="stat">
-                                    <span class="label">Cases per Million:</span>
-                                    <span class="value">${countryData.cases_per_million.toLocaleString()}</span>
-                                </div>
-                                <div class="stat">
-                                    <span class="label">Deaths per Million:</span>
-                                    <span class="value">${countryData.deaths_per_million.toLocaleString()}</span>
-                                </div>
-                                <div class="stat">
-                                    <span class="label">Date:</span>
-                                    <span class="value">${currentDate}</span>
-                                </div>
-                            </div>
-                            <button class="close-popup">&times;</button>
-                        </div>
-                    `;
-                    
-                    // Remove any existing popup
-                    const existingPopup = document.querySelector('.country-popup');
-                    if (existingPopup) {
-                        existingPopup.remove();
-                    }
-                    
-                    // Add popup to the map container (off-screen first)
-                    popup.style.left = `-9999px`;
-                    popup.style.top = `-9999px`;
-                    document.getElementById('map-container').appendChild(popup);
+        // Store countries selection for later
+        worldMap.countries = countries;
+        worldMap.svg = svg;
 
-                    // Attach close button event listener after adding to DOM
-                    const closeBtn = popup.querySelector('.close-popup');
-                    if (closeBtn) {
-                        closeBtn.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            popup.remove();
-                        });
-                    }
-
-                    // Add click-outside-to-close logic
-                    const mapContainer = document.getElementById('map-container');
-                    function handleOutsideClick(e) {
-                        if (!popup.contains(e.target)) {
-                            popup.remove();
-                            mapContainer.removeEventListener('click', handleOutsideClick);
-                        }
-                    }
-                    // Use setTimeout to avoid immediate close from the click that opened the popup
-                    setTimeout(() => {
-                        mapContainer.addEventListener('click', handleOutsideClick);
-                    }, 0);
-
-                    // Now measure the popup
-                    const containerRect = mapContainer.getBoundingClientRect();
-                    const popupRect = popup.getBoundingClientRect();
-
-                    // Mouse position relative to map container
-                    let left = event.clientX - containerRect.left;
-                    let top = event.clientY - containerRect.top;
-
-                    // Ensure popup is always fully visible within the container
-                    const margin = 10;
-                    if (popupRect.width > containerRect.width) {
-                        left = margin;
-                    } else if (left + popupRect.width > containerRect.width - margin) {
-                        left = containerRect.width - popupRect.width - margin;
-                    }
-                    if (left < margin) left = margin;
-
-                    if (popupRect.height > containerRect.height) {
-                        top = margin;
-                    } else if (top + popupRect.height > containerRect.height - margin) {
-                        top = containerRect.height - popupRect.height - margin;
-                    }
-                    if (top < margin) top = margin;
-
-                    popup.style.left = `${left}px`;
-                    popup.style.top = `${top}px`;
-                } else {
-                    console.log('No data available for', d.properties.name);
-                    console.log('Available countries:', currentMapData?.countries.map(c => c.country));
-                    console.log('Current date:', currentDate);
-                }
+        // Set up zoom behavior with dynamic translateExtent
+        const zoom = d3.zoom()
+            .scaleExtent([1, 8])
+            .on('zoom', (event) => {
+                g.attr('transform', event.transform);
+                zoomLevel = event.transform.k;
+                // Dynamically restrict panning so the map cannot be dragged out of view
+                const t = event.transform;
+                const maxX = (width * t.k - width) / 2;
+                const maxY = (height * t.k - height) / 2;
+                const minX = -maxX;
+                const minY = -maxY;
+                zoom.translateExtent([[minX, minY], [width - minX, height - minY]]);
             });
 
-        // Add click handler to container to reset country styles
-        container.addEventListener('click', function(event) {
-            if (event.target === container || event.target === svg.node()) {
-                d3.selectAll('.country')
-                    .style('stroke', '#fff')
-                    .style('stroke-width', 0.5);
+        svg.call(zoom);
+
+        // Add click events for countries
+        countries.on('click', function(event, d) {
+            event.stopPropagation();
+            
+            // Reset all countries to default style
+            d3.selectAll('.country')
+                .classed('selected', false);
+            
+            // Highlight clicked country
+            d3.select(this)
+                .classed('selected', true);
+            
+            // Find country data
+            const countryData = findCountryData(d.properties.name);
+            
+            if (countryData) {
+                showCountryPopup(event, countryData, container);
+            } else {
+                console.log('No data available for', d.properties.name);
             }
         });
 
-        return svg;
+        // Add click handler to reset selection and close popup
+        svg.on('click', function(event) {
+            if (event.target === svg.node() || event.target === svg.select('rect').node()) {
+                d3.selectAll('.country')
+                    .classed('selected', false);
+                
+                // Close any open popup
+                const popup = document.querySelector('.country-popup');
+                if (popup) {
+                    popup.classList.add('fade-out');
+                    setTimeout(() => popup.remove(), 300);
+                }
+            }
+        });
+
+        // Set up zoom control buttons
+        document.getElementById('zoom-in').addEventListener('click', () => {
+            svg.transition().duration(300).call(zoom.scaleBy, 1.5);
+        });
+        
+        document.getElementById('zoom-out').addEventListener('click', () => {
+            svg.transition().duration(300).call(zoom.scaleBy, 0.75);
+        });
+        
+        document.getElementById('reset-view').addEventListener('click', () => {
+            svg.transition().duration(500).call(zoom.transform, d3.zoomIdentity);
+        });
+
+        mapInitialized = true;
+        return { svg, g, path, countries, colorScale, projection };
     } catch (error) {
         console.error('Error initializing map:', error);
         showError('Failed to initialize world map. Please refresh the page.');
@@ -310,76 +233,198 @@ async function initMap() {
     }
 }
 
-// Update map colors based on severity
-function updateMap(data) {
-    console.log('Updating map with data:', {
-        date: data.date,
-        countryCount: data.countries.length,
-        countries: data.countries.map(c => c.country)
-    });
+// Helper function to find country data from the currentMapData
+function findCountryData(countryName) {
+    if (!currentMapData || !currentMapData.countries) return null;
     
-    currentMapData = data;
+    // Normalize the search name
+    const normalizedName = countryName.toLowerCase().trim();
     
-    // Define severity thresholds based on cases per million
-    const severityThresholds = {
-        low: 10000,      // 0-10,000 cases per million
-        moderate: 50000, // 10,000-50,000 cases per million
-        high: 100000,    // 50,000-100,000 cases per million
-        veryHigh: 200000 // 100,000-200,000 cases per million
+    // Common name variations
+    const nameVariations = {
+        'united states': ['usa', 'united states of america', 'u.s.a.', 'u.s.'],
+        'united kingdom': ['uk', 'great britain', 'britain', 'england'],
+        'russian federation': ['russia'],
+        'czech republic': ['czechia'],
+        'south korea': ['republic of korea', 'korea, south'],
+        'north korea': ['democratic people\'s republic of korea', 'korea, north'],
+        'iran': ['iran (islamic republic of)'],
+        'vietnam': ['viet nam'],
+        'brunei': ['brunei darussalam'],
+        'congo': ['republic of the congo'],
+        'democratic republic of the congo': ['drc', 'congo (kinshasa)'],
+        'laos': ['lao people\'s democratic republic'],
+        'syria': ['syrian arab republic'],
+        'tanzania': ['united republic of tanzania'],
+        'uae': ['united arab emirates'],
+        'venezuela': ['bolivarian republic of venezuela']
     };
-
-    const colorScale = d3.scaleThreshold()
-        .domain([
-            severityThresholds.low,
-            severityThresholds.moderate,
-            severityThresholds.high,
-            severityThresholds.veryHigh
-        ])
-        .range(['#4CAF50', '#8BC34A', '#FFC107', '#FF9800', '#F44336']);
-
-    // Update legend
-    const legend = d3.select('#legend-container .map-legend');
-    legend.selectAll('*').remove(); // Clear existing legend
-
-    legend.append('h4')
-        .text('Cases per Million');
-
-    const legendData = [
-        { color: '#4CAF50', label: 'Low (< 10,000)' },
-        { color: '#8BC34A', label: 'Moderate (10,000-50,000)' },
-        { color: '#FFC107', label: 'High (50,000-100,000)' },
-        { color: '#FF9800', label: 'Very High (100,000-200,000)' },
-        { color: '#F44336', label: 'Critical (> 200,000)' }
-    ];
-
-    legend.selectAll('.legend-item')
-        .data(legendData)
-        .enter()
-        .append('div')
-        .attr('class', 'legend-item')
-        .html(d => `
-            <div class=\"legend-color\" style=\"background-color: ${d.color} !important\">&nbsp;</div>
-            <span>${d.label}</span>
-        `);
-
-    // Update country colors
-    d3.selectAll('.country')
-        .style('fill', d => {
-            const country = data.countries.find(c => c.iso_code === d.id);
-            if (!country) return '#ccc'; // No data
-            const casesPerMillion = country.cases_per_million;
-            return colorScale(casesPerMillion);
-        })
-        .style('stroke', '#fff')
-        .style('stroke-width', 0.5);
+    
+    // Try direct match first
+    let country = currentMapData.countries.find(c => 
+        c.country.toLowerCase().trim() === normalizedName
+    );
+    
+    // Try variations if no match
+    if (!country) {
+        for (const [standardName, variations] of Object.entries(nameVariations)) {
+            if (normalizedName === standardName || variations.includes(normalizedName)) {
+                // If country name matches the standard name or its variations
+                country = currentMapData.countries.find(c => 
+                    c.country.toLowerCase().trim() === standardName || 
+                    variations.includes(c.country.toLowerCase().trim())
+                );
+                if (country) break;
+            }
+        }
+    }
+    
+    return country;
 }
 
-// Load dates for timeline
+// Show country popup with improved styling and animations
+function showCountryPopup(event, countryData, container) {
+    // Remove any existing popup
+    const existingPopup = document.querySelector('.country-popup');
+    if (existingPopup) {
+        existingPopup.remove();
+    }
+    
+    // Create popup element
+    const popup = document.createElement('div');
+    popup.className = 'country-popup';
+    popup.innerHTML = `
+        <div class="popup-header">
+            <h3>${countryData.country}</h3>
+            <button class="close-popup">&times;</button>
+        </div>
+        <div class="popup-content">
+            <div class="popup-stats">
+                <div class="stat">
+                    <span class="label"><i class="fas fa-virus"></i> Total Cases:</span>
+                    <span class="value">${countryData.cases.toLocaleString()}</span>
+                </div>
+                <div class="stat">
+                    <span class="label"><i class="fas fa-heart-broken"></i> Total Deaths:</span>
+                    <span class="value">${countryData.deaths.toLocaleString()}</span>
+                </div>
+                <div class="stat">
+                    <span class="label"><i class="fas fa-chart-line"></i> Cases per Million:</span>
+                    <span class="value">${countryData.cases_per_million.toLocaleString()}</span>
+                </div>
+                <div class="stat">
+                    <span class="label"><i class="fas fa-skull"></i> Deaths per Million:</span>
+                    <span class="value">${countryData.deaths_per_million.toLocaleString()}</span>
+                </div>
+                <div class="stat">
+                    <span class="label"><i class="fas fa-calendar-day"></i> Date:</span>
+                    <span class="value">${formatDate(currentDate)}</span>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // Position popup (initially off-screen)
+    popup.style.left = `-9999px`;
+    popup.style.top = `-9999px`;
+    container.appendChild(popup);
+    
+    // Add close button event listener
+    popup.querySelector('.close-popup').addEventListener('click', () => {
+        popup.classList.add('fade-out');
+        setTimeout(() => popup.remove(), 300);
+        
+        // Also clear country selection
+        d3.selectAll('.country')
+            .classed('selected', false);
+    });
+    
+    // Calculate best position for popup
+    const containerRect = container.getBoundingClientRect();
+    const popupRect = popup.getBoundingClientRect();
+    
+    let left = event.clientX - containerRect.left;
+    let top = event.clientY - containerRect.top;
+    
+    // Ensure popup stays within map container bounds
+    const margin = 10;
+    if (left + popupRect.width > containerRect.width - margin) {
+        left = left - popupRect.width - margin;
+    }
+    if (left < margin) left = margin;
+    
+    if (top + popupRect.height > containerRect.height - margin) {
+        top = top - popupRect.height - margin;
+    }
+    if (top < margin) top = margin;
+    
+    // Apply final position with animation
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
+}
+
+// Format date for display
+function formatDate(dateString) {
+    const options = { year: 'numeric', month: 'long', day: 'numeric' };
+    return new Date(dateString).toLocaleDateString(undefined, options);
+}
+
+// Update map colors based on severity
+async function updateMap(data) {
+    if (!mapInitialized) {
+        worldMap = await initMap();
+    }
+    currentMapData = data;
+    // Get map elements
+    const { countries, colorScale } = worldMap;
+    // Update country colors with transition
+    countries
+        .transition()
+        .duration(500)
+        .style('fill', d => {
+            const country = data.countries.find(c => c.iso_code === d.id);
+            if (!country || !country.cases || country.cases === 0) return '#ccc'; // No data or zero cases
+            return colorScale(country.cases_per_million);
+        });
+    // Animate count numbers (use backend global stats if available)
+    if (typeof data.total_cases === 'number') animateNumbers('total-cases', data.total_cases);
+    if (typeof data.total_deaths === 'number') animateNumbers('total-deaths', data.total_deaths);
+    if (Array.isArray(data.countries)) animateNumbers('total-countries', data.countries.length);
+}
+
+// Animate counting up numbers
+function animateNumbers(elementId, targetNumber) {
+    const element = document.getElementById(elementId);
+    // If targetNumber is not a valid number, just show 0
+    if (typeof targetNumber !== 'number' || isNaN(targetNumber)) {
+        element.textContent = '0';
+        return;
+    }
+    const startValue = parseInt(element.textContent.replace(/,/g, '')) || 0;
+    const duration = 1000; // ms
+    const frameRate = 30; // frames per second
+    const totalFrames = duration / (1000 / frameRate);
+    const increment = (targetNumber - startValue) / totalFrames;
+    let currentValue = startValue;
+    let frame = 0;
+    const animate = () => {
+        frame++;
+        currentValue += increment;
+        if (frame <= totalFrames) {
+            element.textContent = Math.round(currentValue).toLocaleString();
+            requestAnimationFrame(animate);
+        } else {
+            element.textContent = targetNumber.toLocaleString();
+        }
+    };
+    animate();
+}
+
+// Load dates for timeline with improved UX
 async function loadDates() {
     try {
         const data = await fetchWithError(`${API_BASE}/api/timeseries`);
         dates = data.dates;
-        console.log('Available dates:', dates);
         
         // Set up date picker
         const datePicker = document.getElementById('date-picker');
@@ -388,9 +433,12 @@ async function loadDates() {
         datePicker.min = dates[0];
         datePicker.max = dates[dates.length - 1];
         
-        // Set initial date
+        // Set initial date to latest available
         currentDate = dates[dates.length - 1];
         datePicker.value = currentDate;
+        
+        // Show formatted date in the date display
+        document.getElementById('current-date').textContent = formatDate(currentDate);
         
         // Load initial map data
         await loadMapData(currentDate);
@@ -398,13 +446,13 @@ async function loadDates() {
         // Add event listeners for timeline controls
         datePicker.addEventListener('change', async (e) => {
             const selectedDate = e.target.value;
-            console.log('Date picker changed to:', selectedDate);
             if (dates.includes(selectedDate)) {
                 currentDate = selectedDate;
                 await loadMapData(currentDate);
             }
         });
 
+        // Previous date button
         document.getElementById('prev-date').addEventListener('click', async () => {
             const currentIndex = dates.indexOf(currentDate);
             if (currentIndex > 0) {
@@ -414,6 +462,7 @@ async function loadDates() {
             }
         });
 
+        // Next date button
         document.getElementById('next-date').addEventListener('click', async () => {
             const currentIndex = dates.indexOf(currentDate);
             if (currentIndex < dates.length - 1) {
@@ -423,130 +472,128 @@ async function loadDates() {
             }
         });
 
-        // Update button states
-        function updateButtonStates() {
-            const currentIndex = dates.indexOf(currentDate);
-            document.getElementById('prev-date').disabled = currentIndex === 0;
-            document.getElementById('next-date').disabled = currentIndex === dates.length - 1;
-        }
-
-        // Update button states initially and after date changes
+        // Update button states initially
         updateButtonStates();
-        datePicker.addEventListener('change', updateButtonStates);
-        document.getElementById('prev-date').addEventListener('click', updateButtonStates);
-        document.getElementById('next-date').addEventListener('click', updateButtonStates);
 
     } catch (error) {
         console.error('Error loading dates:', error);
-        showError('Failed to load timeline data');
+        showError('Failed to load timeline data. Please try again later.');
     }
 }
 
-// Load map data
+// Update timeline button states
+function updateButtonStates() {
+    const currentIndex = dates.indexOf(currentDate);
+    const prevButton = document.getElementById('prev-date');
+    const nextButton = document.getElementById('next-date');
+    
+    prevButton.disabled = currentIndex === 0;
+    nextButton.disabled = currentIndex === dates.length - 1;
+}
+
+// Load map data for a specific date
 async function loadMapData(date) {
     try {
-        console.log('Loading map data for date:', date);
-        
         // Ensure date is in YYYY-MM-DD format
         const formattedDate = new Date(date).toISOString().split('T')[0];
-        console.log('Formatted date:', formattedDate);
         
-        // Get available dates for validation
-        const availableDates = await fetchWithError(`${API_BASE}/api/timeseries`);
-        console.log('Available dates:', availableDates.dates);
-        
-        if (!availableDates.dates.includes(formattedDate)) {
-            console.warn(`Date ${formattedDate} not found in available dates`);
-            // Use the closest available date
-            const closestDate = availableDates.dates.reduce((prev, curr) => {
-                return Math.abs(new Date(curr) - new Date(formattedDate)) < Math.abs(new Date(prev) - new Date(formattedDate)) ? curr : prev;
+        // Validate date against available dates
+        if (!dates.includes(formattedDate)) {
+            const closestDate = dates.reduce((prev, curr) => {
+                return Math.abs(new Date(curr) - new Date(formattedDate)) < 
+                       Math.abs(new Date(prev) - new Date(formattedDate)) ? curr : prev;
             });
-            console.log(`Using closest available date: ${closestDate}`);
-            formattedDate = closestDate;
+            date = closestDate;
         }
         
+        // Get map data
         const data = await fetchWithError(`${API_BASE}/api/map-data/${formattedDate}`);
-        console.log('Received map data:', {
-            date: data.date,
-            countryCount: data.countries.length,
-            countries: data.countries.map(c => c.country)
-        });
-        
-        // Store current map data for click events
         currentMapData = data;
         currentDate = formattedDate;
         
-        updateMap(data);
+        // Update map visualization
+        await updateMap(data);
         
-        // Update global stats based on current date
+        // Get global stats
         const globalStats = await fetchWithError(`${API_BASE}/api/global-stats?date=${formattedDate}`);
-        console.log('Received global stats:', globalStats);
         
-        // Update the display with the new stats
+        // Update global stats
         document.getElementById('total-cases').textContent = globalStats.total_cases.toLocaleString();
         document.getElementById('total-deaths').textContent = globalStats.total_deaths.toLocaleString();
         document.getElementById('total-countries').textContent = globalStats.total_countries;
         
-        // Update the current date display
-        document.getElementById('current-date').textContent = formattedDate;
+        // Update date display with formatted date
+        document.getElementById('current-date').textContent = formatDate(formattedDate);
+        document.getElementById('date-picker').value = formattedDate;
+        
+        // Update button states
+        updateButtonStates();
+        
     } catch (error) {
         console.error('Error loading map data:', error);
-        showError('Failed to load map data');
+        showError('Failed to load map data for the selected date.');
     }
 }
 
-// Load global stats
-async function loadGlobalStats() {
-    try {
-        const data = await fetchWithError(`${API_BASE}/api/global-stats?date=${currentDate}`);
-        console.log('Loading global stats for date:', currentDate);
-        console.log('Received global stats:', data);
-        
-        document.getElementById('total-cases').textContent = data.total_cases.toLocaleString();
-        document.getElementById('total-deaths').textContent = data.total_deaths.toLocaleString();
-        document.getElementById('total-countries').textContent = data.total_countries;
-        document.getElementById('current-date').textContent = data.date;
-    } catch (error) {
-        console.error('Error loading global stats:', error);
-    }
-}
-
-// Add error handling for fetch requests
-async function fetchWithError(url) {
-    try {
-        console.log(`Fetching ${url}...`);
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-            },
-            mode: 'cors',
-            credentials: 'omit'
-        });
-        
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || `Error fetching ${url}: ${response.status} ${response.statusText}`);
+// Enhanced fetch with error handling, retries, and timeout
+async function fetchWithError(url, retries = 2, timeout = 10000) {
+    let attempts = 0;
+    
+    while (attempts <= retries) {
+        try {
+            // Create abort controller for timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
+            
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: { 'Accept': 'application/json' },
+                mode: 'cors',
+                credentials: 'omit',
+                signal: controller.signal
+            });
+            
+            // Clear timeout
+            clearTimeout(timeoutId);
+            
+            if (!response.ok) {
+                const errorText = await response.text();
+                let errorMsg;
+                try {
+                    const errorJson = JSON.parse(errorText);
+                    errorMsg = errorJson.detail || `Error: ${response.status} ${response.statusText}`;
+                } catch {
+                    errorMsg = `Error: ${response.status} ${response.statusText}`;
+                }
+                throw new Error(errorMsg);
+            }
+            
+            return await response.json();
+            
+        } catch (error) {
+            attempts++;
+            
+            if (error.name === 'AbortError') {
+                console.error(`Request timeout for ${url}`);
+                if (attempts > retries) {
+                    throw new Error(`Request timed out after ${timeout / 1000} seconds`);
+                }
+            } else if (attempts > retries) {
+                throw error;
+            }
+            
+            // Wait before retry (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempts));
         }
-        const data = await response.json();
-        console.log(`Successfully fetched ${url}`);
-        return data;
-    } catch (error) {
-        console.error(`Error fetching ${url}:`, error);
-        showError(`Failed to load data: ${error.message}`);
-        throw error;
     }
 }
 
-// Test backend connection
+// Test backend connection with improved UI feedback
 async function testBackend() {
     try {
-        console.log('Testing backend connection...');
         const response = await fetch(`${API_BASE}/api/test`, {
             method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-            },
+            headers: { 'Accept': 'application/json' },
             mode: 'cors',
             credentials: 'omit'
         });
@@ -556,7 +603,6 @@ async function testBackend() {
         }
         
         const data = await response.json();
-        console.log('Backend test response:', data);
         
         if (!data.data_loaded) {
             throw new Error('Backend data not loaded properly');
@@ -565,73 +611,48 @@ async function testBackend() {
         return true;
     } catch (error) {
         console.error('Backend test failed:', error);
-        showError(`Backend connection failed: ${error.message}. Please make sure the backend server is running at ${API_BASE}`);
+        showError(`Backend connection failed. Please make sure the backend server is running at ${API_BASE}`);
         return false;
     }
 }
 
-// Initialize
-async function init() {
-    try {
-        showLoading();
-        console.log('Starting dashboard initialization...');
-        
-        // Load data in sequence with better error handling
-        try {
-            console.log('Loading dates...');
-            await loadDates();
-            console.log('Dates loaded');
-        } catch (error) {
-            console.error('Failed to load dates:', error);
-            showError('Failed to load timeline data. Some features may be limited.');
+// Handle window resize
+function handleResize() {
+    if (mapInitialized) {
+        if (currentMapData) {
+            updateMap(currentMapData);
         }
-        
-        try {
-            console.log('Loading global stats...');
-            await loadGlobalStats();
-            console.log('Global stats loaded');
-        } catch (error) {
-            console.error('Failed to load global stats:', error);
-            showError('Failed to load global statistics. Some features may be limited.');
-        }
-        
-        try {
-            console.log('Initializing map...');
-            worldMap = await initMap();
-            console.log('Map initialized');
-        } catch (error) {
-            console.error('Map initialization failed:', error);
-            showError('Failed to load world map. Some features may be limited.');
-        }
-        
-    } catch (error) {
-        console.error('Error initializing dashboard:', error);
-        showError('Failed to initialize dashboard. Please refresh the page.');
-    } finally {
-        console.log('Initialization complete');
-        hideLoading();
     }
 }
 
-// Start initialization when the page loads
-window.addEventListener('load', async () => {
+// Initialize dashboard
+async function init() {
     try {
-        showLoading();
-        console.log('Starting dashboard initialization...');
+        // Initialize user preferences
+        initPreferences();
+        
+        // Set up window resize handler
+        window.addEventListener('resize', handleResize);
         
         // Test backend connection
         const isBackendRunning = await testBackend();
         if (!isBackendRunning) {
-            console.error('Backend test failed, stopping initialization');
             return;
         }
         
-        console.log('Backend test successful, initializing dashboard...');
-        await init();
+        // Load map if it hasn't been initialized
+        if (!mapInitialized) {
+            worldMap = await initMap();
+        }
+        
+        // Load timeline data
+        await loadDates();
+        
     } catch (error) {
-        console.error('Error during initialization:', error);
-        showError('Failed to initialize dashboard: ' + error.message);
-    } finally {
-        hideLoading();
+        console.error('Error initializing dashboard:', error);
+        showError('Failed to initialize dashboard. Please refresh the page.');
     }
-}); 
+}
+
+// Start initialization when the page loads
+window.addEventListener('load', init);

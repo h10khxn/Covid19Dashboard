@@ -1,5 +1,5 @@
 # main.py (minimal backend to support COVID-19 map)
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -19,7 +19,7 @@ app = FastAPI(title="COVID-19 Dashboard API")
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],  # Allow all origins for development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -31,7 +31,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # Root route to serve the dashboard
 @app.get("/")
 async def read_root():
-    return FileResponse("index.html")
+    return FileResponse("static/index.html")
 
 # Include routers
 app.include_router(covid_router.router, prefix="/api")
